@@ -17,7 +17,9 @@ import { fetchDeezerAlbum, getApiStats, sleep, SLEEP_MS } from './deezer-api';
  *   - RAPIDAPI_KEY_1..RAPIDAPI_KEY_10: RapidAPI keys for rotation
  */
 
-const LIMIT = parseInt(process.env.LIMIT || '1000');
+const LIMIT_ENV = process.env.LIMIT;
+const RUN_ALL = !LIMIT_ENV || LIMIT_ENV.trim() === '';
+const LIMIT = RUN_ALL ? 999999 : parseInt(LIMIT_ENV as string);
 const WORKFLOW_NAME = 'Deezer Media Enrichment';
 
 /**

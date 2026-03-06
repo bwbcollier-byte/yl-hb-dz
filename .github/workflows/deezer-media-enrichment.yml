@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       record_limit:
-        description: "Number of records to process (leave empty for default 1000)"
+        description: "Number of records to process (leave empty for all)"
         required: false
         default: ""
         type: string
@@ -47,7 +47,7 @@ jobs:
           RAPIDAPI_KEY_8: ${{ secrets.RAPIDAPI_KEY_8 }}
           RAPIDAPI_KEY_9: ${{ secrets.RAPIDAPI_KEY_9 }}
           RAPIDAPI_KEY_10: ${{ secrets.RAPIDAPI_KEY_10 }}
-          LIMIT: ${{ github.event.inputs.record_limit || '1000' }}
+          LIMIT: ${{ github.event.inputs.record_limit }}
           CI: "true"
         run: node dist/deezer-media-enrichment.js
 
