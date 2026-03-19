@@ -62,14 +62,35 @@ def update_running_stat(existing_json_str, new_value_str, date_str):
 
 # ── API Helpers ────────────────────────────────────────────────────────────────
 
-def fetch_deezer_profile(deezer_id: str) -> dict:
-    """Query Deezer RapidAPI for artist details."""
+def search_deezer_artist(name: str) -> str:
+    """Search Deezer for the correct artist ID by name."""
+    key = get_next_rapidapi_key()
+    url = "https://deezerdevs-deezer.p.rapidapi.com/search"
+    headers = {
+        "X-RapidAPI-Key": key,
+        "X-RapidAPI-Host": "deezerdevs-deezer.p.rapidapi.com"
+    }
+    try:
+        r = requests.get(url, headers=headers, params={"q": name}, timeout=10)
+        if r.status_code == 200:
+            data = r.json().get("data", [])
+            for item in data:
+                artist = item.get("artist", {})
+                # Case-insensitive exact match check
+                if artist.get("name", "").lower() == name.lower():
+                    return str(artist.get("id"))
+    except:
+        pass
+    return None
+
+def fetch_deezer_profile(deezer_id: str, artist_name: str = None) -> (dict, str):
+    """Query Deezer RapidAPI for artist details. Returns (data, corrected_id)."""
     if not deezer_id or deezer_id == "0":
-        return None
+        return None, None
 
     if not RAPIDAPI_KEYS:
         print("  [ERROR] No RAPIDAPI_KEYS found in environment!")
-        return None
+        return None, None
 
     key = get_next_rapidapi_key()
     url = f"https://deezerdevs-deezer.p.rapidapi.com/artist/{deezer_id}"
@@ -79,20 +100,32 @@ def fetch_deezer_profile(deezer_id: str) -> dict:
     }
 
     try:
-        # Debug: Show partial key and ID
         print(f"  --> Fetching ID: {deezer_id} (using Key ending in ...{key[-4:]})")
         r = requests.get(url, headers=headers, timeout=10)
+        
+        # If ID is wrong (code 800), try to find the correct one via Search
         if r.status_code == 200:
-            return r.json()
+            resp_data = r.json()
+            if "error" in resp_data and resp_data["error"].get("code") == 800 and artist_name:
+                print(f"    [FIX] ID {deezer_id} invalid. Searching for '{artist_name}'...")
+                new_id = search_deezer_artist(artist_name)
+                if new_id:
+                    print(f"    [FOUND] New ID: {new_id}. Retrying...")
+                    # Recursive call with the NEW ID
+                    data, _ = fetch_deezer_profile(new_id, None)
+                    return data, new_id
+                else:
+                    print(f"    [FAILED] Could not find a match for '{artist_name}'")
+            return resp_data, None
         elif r.status_code == 429:
-            print(f"  [WARN] Rate limit hit on Key ending in ...{key[-4:]}. Throttling...")
+            print(f"  [WARN] Rate limit hit. Throttling...")
             time.sleep(2)
         else:
-            print(f"  [WARN] Deezer API returned {r.status_code} for ID {deezer_id}: {r.text}")
+            print(f"  [WARN] Deezer API returned {r.status_code}: {r.text}")
     except Exception as e:
         print(f"  [WARN] Deezer Request Failed: {e}")
         
-    return None
+    return None, None
 
 def fetch_deezer_extended_data(deezer_id):
     """Fetch extended data using the public Deezer API with recursive fallback discovery."""
@@ -295,7 +328,8 @@ def main():
                 print("  Skipping — No Deezer ID")
                 continue
 
-            api_data = fetch_deezer_profile(dz_id)
+            api_data, corrected_id = fetch_deezer_profile(dz_id, name)
+
             if api_data and "error" not in api_data:
                 update_data = {
                     "Soc DZ name": api_data.get("name", ""),
@@ -308,6 +342,14 @@ def main():
                     "Soc DZ tracklist": api_data.get("tracklist", ""),
                     "Soc DZ type": api_data.get("type", "")
                 }
+                
+                # If we corrected the ID during discovery, save the NEW ONE to Airtable
+                if corrected_id:
+                    update_data["Soc DZ id"] = corrected_id
+                    dz_id = corrected_id # Update local ref for extended fetch
+                    print(f"    [SAVING] Will update Airtable with correct ID: {corrected_id}")
+
+                # --- EXTENDED DATA ---
                 update_data.update(fetch_deezer_extended_data(dz_id))
                 
                 new_fans = api_data.get("nb_fan")
