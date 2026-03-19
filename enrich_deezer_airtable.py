@@ -14,27 +14,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Config (Mapped to Environment Variables) ──────────────────────────────────
-AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY", "pat55yJeWST4RIQlr.421b76687eb458ba6399d083c4b34f29e0ee2d32081e222d59363d38939cd7a6")
-BASE_ID          = os.environ.get("AIRTABLE_BASE_ID", "appvznE6mcrQxfEEy")
-TABLE_ID         = os.environ.get("AIRTABLE_TABLE_ID", "tbl2BpqpcBefq6alA")
-VIEW_ID          = os.environ.get("AIRTABLE_VIEW_ID", "viw07KxE9pNY0Mvjr")
+AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY")
+BASE_ID          = os.environ.get("AIRTABLE_BASE_ID")
+TABLE_ID         = os.environ.get("AIRTABLE_TABLE_ID")
+VIEW_ID          = os.environ.get("AIRTABLE_VIEW_ID")
 
-# RapidAPI Keys (Comma separated in ENV, fallback to the list we had)
-DEFAULT_KEYS = [
-    "c83516b3acmshdfd6347a5914a11p17e517jsn06a3c5de8b13",
-    "7f039e9cd5msh7d53bf9623df131p1191ccjsnd5baa1efdd82",
-    "0be625e0dbmshe3f58bae0a1b103p1a9cb4jsn8f4252e04b42",
-    "bfb3e64505mshd9c819df5fb856fp18e4f4jsn98cea7554500",
-    "4146451f26mshca24e2bfa13bff4p1aab81jsn84d33f841460",
-    "8be5f006c9mshd812675480db254p1b653ejsn602cc9149241",
-    "2a6da923bamsh0840070fa506709p145861jsnae8888e67f00",
-    "cea3641b50msh52581f483562ccdp186ee6jsn6759e8241393",
-    "8f8ab324eamsh88b8de70b402e0cp1d7d0ajsn13c934eadbd9",
-    "4030dde5ddmshe67eb1d7832914dp17c97ajsndaa5b65ce7d4",
-    "730a02e172msh79ca9cab92fe41dp1b34a2jsnd53411309cd7"
-]
+# RapidAPI Keys (Comma separated in ENV)
 env_keys = os.environ.get("RAPIDAPI_KEYS")
-RAPIDAPI_KEYS = env_keys.split(",") if env_keys else DEFAULT_KEYS
+RAPIDAPI_KEYS = env_keys.split(",") if env_keys else []
 
 AIRTABLE_HEADERS = {
     "Authorization": f"Bearer {AIRTABLE_API_KEY}",
