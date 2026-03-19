@@ -1,0 +1,90 @@
+name: Deezer Unified Enrichment
+
+on:
+  schedule:
+    # Run 4 times a day (Every 6 hours) at 00:00, 06:00, 12:00, 18:00 UTC
+    - cron: '0 0,6,12,18 * * *'
+  workflow_dispatch:
+    inputs:
+      record_limit:
+        description: 'Number of records to process (leave empty for all)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  media-enrichment:
+    name: Media Profile Enrichment
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run Deezer Media Enrichment
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RAPIDAPI_KEY_1: ${{ secrets.RAPIDAPI_KEY_1 }}
+          RAPIDAPI_KEY_2: ${{ secrets.RAPIDAPI_KEY_2 }}
+          RAPIDAPI_KEY_3: ${{ secrets.RAPIDAPI_KEY_3 }}
+          RAPIDAPI_KEY_4: ${{ secrets.RAPIDAPI_KEY_4 }}
+          RAPIDAPI_KEY_5: ${{ secrets.RAPIDAPI_KEY_5 }}
+          RAPIDAPI_KEY_6: ${{ secrets.RAPIDAPI_KEY_6 }}
+          RAPIDAPI_KEY_7: ${{ secrets.RAPIDAPI_KEY_7 }}
+          RAPIDAPI_KEY_8: ${{ secrets.RAPIDAPI_KEY_8 }}
+          RAPIDAPI_KEY_9: ${{ secrets.RAPIDAPI_KEY_9 }}
+          RAPIDAPI_KEY_10: ${{ secrets.RAPIDAPI_KEY_10 }}
+          LIMIT: ${{ github.event.inputs.record_limit }}
+          CI: 'true'
+        run: node dist/deezer-media-enrichment.js
+
+  social-enrichment:
+    name: Social Profile Enrichment
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run Deezer Social Enrichment
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RAPIDAPI_KEY_1: ${{ secrets.RAPIDAPI_KEY_1 }}
+          RAPIDAPI_KEY_2: ${{ secrets.RAPIDAPI_KEY_2 }}
+          RAPIDAPI_KEY_3: ${{ secrets.RAPIDAPI_KEY_3 }}
+          RAPIDAPI_KEY_4: ${{ secrets.RAPIDAPI_KEY_4 }}
+          RAPIDAPI_KEY_5: ${{ secrets.RAPIDAPI_KEY_5 }}
+          RAPIDAPI_KEY_6: ${{ secrets.RAPIDAPI_KEY_6 }}
+          RAPIDAPI_KEY_7: ${{ secrets.RAPIDAPI_KEY_7 }}
+          RAPIDAPI_KEY_8: ${{ secrets.RAPIDAPI_KEY_8 }}
+          RAPIDAPI_KEY_9: ${{ secrets.RAPIDAPI_KEY_9 }}
+          RAPIDAPI_KEY_10: ${{ secrets.RAPIDAPI_KEY_10 }}
+          LIMIT: ${{ github.event.inputs.record_limit }}
+          CI: 'true'
+        run: node dist/deezer-social-enrichment.js
