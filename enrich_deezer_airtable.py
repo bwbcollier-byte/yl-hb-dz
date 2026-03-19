@@ -67,6 +67,10 @@ def fetch_deezer_profile(deezer_id: str) -> dict:
     if not deezer_id or deezer_id == "0":
         return None
 
+    if not RAPIDAPI_KEYS:
+        print("  [ERROR] No RAPIDAPI_KEYS found in environment!")
+        return None
+
     key = get_next_rapidapi_key()
     url = f"https://deezerdevs-deezer.p.rapidapi.com/artist/{deezer_id}"
     headers = {
@@ -75,6 +79,8 @@ def fetch_deezer_profile(deezer_id: str) -> dict:
     }
 
     try:
+        # Debug: Show partial key and ID
+        print(f"  --> Fetching ID: {deezer_id} (using Key ending in ...{key[-4:]})")
         r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             return r.json()
@@ -82,7 +88,7 @@ def fetch_deezer_profile(deezer_id: str) -> dict:
             print(f"  [WARN] Rate limit hit on Key ending in ...{key[-4:]}. Throttling...")
             time.sleep(2)
         else:
-            print(f"  [WARN] Deezer API returned {r.status_code} for ID {deezer_id}")
+            print(f"  [WARN] Deezer API returned {r.status_code} for ID {deezer_id}: {r.text}")
     except Exception as e:
         print(f"  [WARN] Deezer Request Failed: {e}")
         
