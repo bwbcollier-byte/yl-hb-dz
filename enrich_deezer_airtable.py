@@ -62,6 +62,18 @@ def update_running_stat(existing_json_str, new_value_str, date_str):
 
 # ── API Helpers ────────────────────────────────────────────────────────────────
 
+import unicodedata
+
+def normalize_name(name: str) -> str:
+    """Remove accents and special characters for looser matching."""
+    if not name: return ""
+    # Normalize unicode (accents) and convert to ASCII
+    nfkd_form = unicodedata.normalize('NFKD', name)
+    only_ascii = nfkd_form.encode('ASCII', 'ignore').decode('ASCII')
+    # Remove common punctuation and double spaces
+    clean = "".join(c for c in only_ascii if c.isalnum() or c.isspace()).lower()
+    return " ".join(clean.split())
+
 def search_deezer_artist(name: str) -> str:
     """Search Deezer for the correct artist ID by name."""
     key = get_next_rapidapi_key()
@@ -70,20 +82,21 @@ def search_deezer_artist(name: str) -> str:
         "X-RapidAPI-Key": key,
         "X-RapidAPI-Host": "deezerdevs-deezer.p.rapidapi.com"
     }
+    target_norm = normalize_name(name)
     try:
         r = requests.get(url, headers=headers, params={"q": name}, timeout=10)
         if r.status_code == 200:
             data = r.json().get("data", [])
             for item in data:
                 artist = item.get("artist", {})
-                # Case-insensitive exact match check
-                if artist.get("name", "").lower() == name.lower():
+                found_name = artist.get("name", "")
+                if normalize_name(found_name) == target_norm:
                     return str(artist.get("id"))
     except:
         pass
     return None
 
-def fetch_deezer_profile(deezer_id: str, artist_name: str = None) -> (dict, str):
+def fetch_deezer_profile(deezer_id: str, artist_name: str = None) -> tuple:
     """Query Deezer RapidAPI for artist details. Returns (data, corrected_id)."""
     if not deezer_id or deezer_id == "0":
         return None, None
@@ -133,47 +146,23 @@ def fetch_deezer_extended_data(deezer_id):
     
     top_tracks = []
     try:
-        r = requests.get(f"{base_url}/top?limit=10", timeout=2)
+        r = requests.get(f"{base_url}/top?limit=10", timeout=3)
         if r.status_code == 200:
             for t in r.json().get('data', [])[:10]:
-                top_tracks.append({
-                    "name": t.get("title"),
-                    "link": t.get("link"),
-                    "album": t.get("album", {}).get("title"),
-                    "image": t.get("album", {}).get("cover_xl") or t.get("album", {}).get("cover_medium"),
-                    "duration": f"{int(t.get('duration', 0)) // 60}:{int(t.get('duration', 0)) % 60:02d}"
-                })
+                top_tracks.append(t.get("title"))
     except Exception as e:
         print(f"    [WARN] Skipping Tracks due to timeout: {e}")
 
-    related_artists = []
+    related_names = []
+    related_urls = []
     try:
-        r = requests.get(f"{base_url}/related?limit=10", timeout=2)
+        r = requests.get(f"{base_url}/related?limit=10", timeout=3)
         if r.status_code == 200:
             for a in r.json().get('data', [])[:10]:
-                related_artists.append({
-                    "name": a.get("name"),
-                    "link": a.get("link"),
-                    "image": a.get("picture_xl") or a.get("picture_medium"),
-                    "fans": a.get("nb_fan")
-                })
+                related_names.append(a.get("name"))
+                related_urls.append(a.get("link"))
     except Exception as e:
         print(f"    [WARN] Skipping Related due to timeout: {e}")
-
-    related_playlists = []
-    try:
-        r = requests.get(f"{base_url}/playlists?limit=10", timeout=2)
-        if r.status_code == 200:
-            for p in r.json().get('data', [])[:10]:
-                related_playlists.append({
-                    "name": p.get("title"),
-                    "link": p.get("link"),
-                    "image": p.get("picture_xl") or p.get("picture_medium"),
-                    "fans": p.get("fans", 0),
-                    "tracks": p.get("nb_tracks", 0)
-                })
-    except Exception as e:
-        print(f"    [WARN] Skipping Playlists due to timeout: {e}")
 
     def extract_app_state(html_text):
         marker = 'DZR_APP_STATE__ = '
@@ -203,26 +192,10 @@ def fetch_deezer_extended_data(deezer_id):
         search(d_obj)
         return best_str
 
-    def find_concerts_recursively(d_obj):
-        best_list = []
-        def search(d):
-            nonlocal best_list
-            if isinstance(d, list) and len(d) > 0:
-                first = d[0]
-                if isinstance(first, dict) and ('venue' in first or 'VENUE_NAME' in first) and ('date' in first or 'DATE' in first):
-                    if len(d) > len(best_list):
-                        best_list = d
-            elif isinstance(d, dict):
-                for v in d.values():
-                    if isinstance(v, (dict, list)):
-                        search(v)
-        search(d_obj)
-        return best_list
-
     bio = ""
     scrape_headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
     try:
-        r_bio = requests.get(f"https://www.deezer.com/en/artist/{deezer_id}/biography", headers=scrape_headers, timeout=4)
+        r_bio = requests.get(f"https://www.deezer.com/en/artist/{deezer_id}/biography", headers=scrape_headers, timeout=5)
         if r_bio.status_code == 200:
             state = extract_app_state(r_bio.text)
             if state:
@@ -233,31 +206,11 @@ def fetch_deezer_extended_data(deezer_id):
     except Exception as e:
         print(f"    [WARN] Skipping Bio: {e}")
 
-    concerts = []
-    try:
-        r_conc = requests.get(f"https://www.deezer.com/en/artist/{deezer_id}/concerts", headers=scrape_headers, timeout=4)
-        if r_conc.status_code == 200:
-            state = extract_app_state(r_conc.text)
-            if state:
-                concerts_raw = find_concerts_recursively(state)
-                for c in concerts_raw:
-                    concerts.append({
-                        "id": c.get("id", c.get("CONCERT_ID")),
-                        "name": c.get("name", c.get("NAME")),
-                        "date": c.get("date", c.get("DATE")),
-                        "venue": c.get("venue", c.get("VENUE_NAME")),
-                        "city": c.get("city"),
-                        "country": c.get("country")
-                    })
-    except Exception as e:
-        print(f"    [WARN] Skipping Concerts: {e}")
-
     return {
-        "Soc DZ Top Tracks JSON": json.dumps(top_tracks) if top_tracks else "",
-        "Soc DZ Related Artists JSON": json.dumps(related_artists) if related_artists else "",
-        "Soc DZ Related Playlists JSON": json.dumps(related_playlists) if related_playlists else "",
-        "Soc DZ Bio": bio,
-        "Soc DZ Concerts JSON": json.dumps(concerts) if concerts else ""
+        "dez_top_media": ", ".join(top_tracks) if top_tracks else "",
+        "dez_related_name": ", ".join(related_names) if related_names else "",
+        "dez_related_urls": ", ".join(related_urls) if related_urls else "",
+        "dez_description": bio
     }
 
 def update_records_bulk(records_batch: list):
@@ -267,6 +220,12 @@ def update_records_bulk(records_batch: list):
     url = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_ID}"
     r = requests.patch(url, headers=AIRTABLE_HEADERS, json={"records": records_batch}, timeout=15)
     return r.status_code == 200, r.json()
+
+def extract_id_from_url(url: str) -> str:
+    """Extract numeric artist ID from Deezer URL."""
+    if not url: return None
+    match = re.search(r'artist/(\d+)', url)
+    return match.group(1) if match else None
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
@@ -320,44 +279,52 @@ def main():
             rec_id = record["id"]
             fields = record.get("fields", {})
             name   = fields.get("Name", "Unknown")
-            dz_id  = fields.get("Soc DZ id", "").strip()
+            
+            # Read from new URL column if ID is missing
+            dz_id  = fields.get("dez_identifier", "").strip()
+            dz_url = fields.get("soc_deezer", "").strip()
+            
+            if not dz_id and dz_url:
+                dz_id = extract_id_from_url(dz_url)
 
             processed_this_run += 1
             print(f"[{processed_this_run}] {name}")
             if not dz_id:
-                print("  Skipping — No Deezer ID")
+                print("  Skipping — No Deezer ID or URL")
                 continue
 
             api_data, corrected_id = fetch_deezer_profile(dz_id, name)
 
             if api_data and "error" not in api_data:
                 update_data = {
-                    "Soc DZ name": api_data.get("name", ""),
-                    "Soc DZ link": api_data.get("link", ""),
-                    "Soc DZ share": api_data.get("share", ""),
-                    "Soc DZ picture_xl": api_data.get("picture_xl", ""),
-                    "Soc DZ nb_album": str(api_data.get("nb_album", "")),
-                    "Soc DZ nb_fan": str(api_data.get("nb_fan", "")),
-                    "Soc DZ radio": "TRUE" if api_data.get("radio") else "FALSE",
-                    "Soc DZ tracklist": api_data.get("tracklist", ""),
-                    "Soc DZ type": api_data.get("type", "")
+                    "dez_name": api_data.get("name", ""),
+                    "dez_url": api_data.get("link", ""),
+                    "dez_share": api_data.get("share", ""),
+                    "dez_image": api_data.get("picture_xl", ""),
+                    "dez_media_count": str(api_data.get("nb_album", "")),
+                    "dez_followers": str(api_data.get("nb_fan", "")),
+                    "dez_verified": "TRUE" if api_data.get("radio") else "FALSE",
+                    "dez_last_check": today_str
                 }
                 
                 # If we corrected the ID during discovery, save the NEW ONE to Airtable
                 if corrected_id:
-                    update_data["Soc DZ id"] = corrected_id
-                    dz_id = corrected_id # Update local ref for extended fetch
+                    update_data["dez_identifier"] = corrected_id
+                    dz_id = corrected_id 
                     print(f"    [SAVING] Will update Airtable with correct ID: {corrected_id}")
+                else:
+                    update_data["dez_identifier"] = dz_id
 
                 # --- EXTENDED DATA ---
                 update_data.update(fetch_deezer_extended_data(dz_id))
                 
                 new_fans = api_data.get("nb_fan")
                 if new_fans is not None:
-                    update_data["Soc DZ nb_fan running"] = update_running_stat(
-                        fields.get("Soc DZ nb_fan running", ""), str(new_fans), today_str
+                    update_data["dez_running_follower"] = update_running_stat(
+                        fields.get("dez_running_follower", ""), str(new_fans), today_str
                     )
-                update_data["Last Check"] = today_str
+                
+                # Clean up empty values
                 update_data = {k: v for k, v in update_data.items() if v != ""}
                 batch_queue.append({"id": rec_id, "fields": update_data})
             else:
@@ -398,7 +365,10 @@ def main():
         if not offset: break
         params["offset"] = offset
 
-    print(f"\n{'='*50}\nDone. ✅ Enriched: {ok_count} | ❌ Failed/Skipped: {err_count}")
+    print(f"\n{'='*50}\nDone. ✅ Enriched: {ok_count} | {err_count} Failed/Skipped")
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
