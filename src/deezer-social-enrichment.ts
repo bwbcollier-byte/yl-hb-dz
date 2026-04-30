@@ -3,13 +3,13 @@ import { fetchDeezerArtist, getApiStats, sleep, SLEEP_MS } from './deezer-api';
 
 /**
  * Deezer Social Profile Enrichment
- * 
- * Fetches artist data from the Deezer API and updates social_profiles records.
- * 
+ *
+ * Fetches artist data from the Deezer API and updates hb_socials records.
+ *
  * Processing order:
- *   1. Records where last_processed IS NULL (never processed) — first
- *   2. Records where last_processed IS NOT NULL — ordered ASC (oldest first)
- * 
+ *   1. Records where check_deezer_enrichment IS NULL (never processed) — first
+ *   2. Records where check_deezer_enrichment IS NOT NULL — ordered ASC (oldest first)
+ *
  * Environment variables:
  *   - LIMIT: Max records to process per run (default: 1000)
  *   - SUPABASE_URL, SUPABASE_SERVICE_KEY: Supabase credentials
@@ -21,7 +21,7 @@ const RUN_ALL = !LIMIT_ENV || LIMIT_ENV.trim() === '';
 const LIMIT = RUN_ALL ? 999999 : parseInt(LIMIT_ENV as string);
 const WORKFLOW_NAME = 'Deezer Social Enrichment';
 
-function cleanUsername(name: string): string {
+function cleanHandle(name: string): string {
     return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
@@ -71,16 +71,16 @@ async function enrichDeezerSocialProfiles() {
     await updateWorkflowLog('start', `Starting enrichment run with limit=${LIMIT}`, { keys: apiStats.totalKeys });
 
     // ─── Fetch records: unprocessed first, then oldest processed ────────────
-    // Step 1: Get unprocessed records
+    // Step 1: Get unprocessed records (check_deezer_enrichment IS NULL)
     const { data: unprocessed, error: err1 } = await supabase
-        .from('social_profiles')
-        .select('id, social_id, name, last_processed')
-        .eq('social_type', 'Deezer')
-        .not('social_id', 'is', null)
-        .neq('social_id', '')
-        .neq('social_id', 'not.found')
-        .is('last_processed', null)
-        .order('last_checked', { ascending: true, nullsFirst: true })
+        .from('hb_socials')
+        .select('id, identifier, name, check_deezer_enrichment')
+        .eq('type', 'DEEZER')
+        .not('identifier', 'is', null)
+        .neq('identifier', '')
+        .neq('identifier', 'not.found')
+        .is('check_deezer_enrichment', null)
+        .order('last_check', { ascending: true, nullsFirst: true })
         .limit(LIMIT);
 
     if (err1) {
@@ -95,14 +95,14 @@ async function enrichDeezerSocialProfiles() {
     // Step 2: If we still have room, get oldest-processed records
     if (remainingSlots > 0) {
         const { data: oldProcessed, error: err2 } = await supabase
-            .from('social_profiles')
-            .select('id, social_id, name, last_processed')
-            .eq('social_type', 'Deezer')
-            .not('social_id', 'is', null)
-            .neq('social_id', '')
-            .neq('social_id', 'not.found')
-            .not('last_processed', 'is', null)
-            .order('last_processed', { ascending: true })
+            .from('hb_socials')
+            .select('id, identifier, name, check_deezer_enrichment')
+            .eq('type', 'DEEZER')
+            .not('identifier', 'is', null)
+            .neq('identifier', '')
+            .neq('identifier', 'not.found')
+            .not('check_deezer_enrichment', 'is', null)
+            .order('check_deezer_enrichment', { ascending: true })
             .limit(remainingSlots);
 
         if (!err2 && oldProcessed) {
@@ -126,15 +126,15 @@ async function enrichDeezerSocialProfiles() {
         const profile = profiles[i];
         const progress = `[${i + 1}/${profiles.length}]`;
 
-        console.log(`${progress} Processing: ${profile.name || profile.social_id} (ID: ${profile.social_id})`);
+        console.log(`${progress} Processing: ${profile.name || profile.identifier} (ID: ${profile.identifier})`);
 
-        const deezerData = await fetchDeezerArtist(profile.social_id);
+        const deezerData = await fetchDeezerArtist(profile.identifier);
 
         if (deezerData) {
             const now = new Date().toISOString();
-            
-            // Build images JSONB object with all sizes
-            const images = {
+
+            // Build gallery_images JSONB object with all sizes
+            const galleryImages = {
                 picture: deezerData.picture,
                 picture_small: deezerData.picture_small,
                 picture_medium: deezerData.picture_medium,
@@ -144,22 +144,19 @@ async function enrichDeezerSocialProfiles() {
 
             const updatePayload: Record<string, any> = {
                 name: deezerData.name,
-                username: cleanUsername(deezerData.name),
+                handle: cleanHandle(deezerData.name),
                 social_url: deezerData.link,
-                social_image: deezerData.picture_xl,
-                social_about: deezerData.share,
-                followers_count: deezerData.nb_fan,
+                image: deezerData.picture_xl,
+                description: deezerData.share,
+                followers: deezerData.nb_fan,
                 media_count: deezerData.nb_album,
-                images,
-                is_verified: false,
-                is_private: false,
+                gallery_images: galleryImages,
+                verified: false,
                 status: 'done',
-                dz_check: 'done',
-                last_checked: now,
-                last_processed: now,
+                check_deezer_enrichment: now,
+                last_check: now,
                 updated_at: now,
-                processed_updates: `deezer:${now}`,
-                workflow_logs: {
+                history_json: {
                     last_run: now,
                     source: 'deezer-social-enrichment',
                     deezer_id: deezerData.id,
@@ -169,7 +166,7 @@ async function enrichDeezerSocialProfiles() {
             };
 
             const { error: updateError } = await supabase
-                .from('social_profiles')
+                .from('hb_socials')
                 .update(updatePayload)
                 .eq('id', profile.id);
 
@@ -184,13 +181,12 @@ async function enrichDeezerSocialProfiles() {
             // Mark as checked but with error status
             const now = new Date().toISOString();
             await supabase
-                .from('social_profiles')
+                .from('hb_socials')
                 .update({
-                    dz_check: 'error',
-                    last_checked: now,
-                    last_processed: now,
+                    check_deezer_enrichment: now,
+                    last_check: now,
                     updated_at: now,
-                    workflow_logs: {
+                    history_json: {
                         last_run: now,
                         source: 'deezer-social-enrichment',
                         status: 'api_error'
@@ -227,22 +223,22 @@ async function enrichDeezerSocialProfiles() {
         if (wf) {
             // Get fresh counts
             const { count: totalCount } = await supabase
-                .from('social_profiles')
+                .from('hb_socials')
                 .select('*', { count: 'exact', head: true })
-                .eq('social_type', 'Deezer')
-                .not('social_id', 'is', null)
-                .neq('social_id', '')
-                .neq('social_id', 'not.found')
-                .is('last_processed', null);
+                .eq('type', 'DEEZER')
+                .not('identifier', 'is', null)
+                .neq('identifier', '')
+                .neq('identifier', 'not.found')
+                .is('check_deezer_enrichment', null);
 
             const { count: processedCount } = await supabase
-                .from('social_profiles')
+                .from('hb_socials')
                 .select('*', { count: 'exact', head: true })
-                .eq('social_type', 'Deezer')
-                .not('social_id', 'is', null)
-                .neq('social_id', '')
-                .neq('social_id', 'not.found')
-                .not('last_processed', 'is', null);
+                .eq('type', 'DEEZER')
+                .not('identifier', 'is', null)
+                .neq('identifier', '')
+                .neq('identifier', 'not.found')
+                .not('check_deezer_enrichment', 'is', null);
 
             await supabase
                 .from('workflows')
