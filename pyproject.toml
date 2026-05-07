@@ -1,0 +1,14 @@
+[project]
+name = "yl-hb-dz"
+version = "0.1.0"
+description = "Deezer enrichment scraper (Python parts)"
+requires-python = ">=3.12"
+dependencies = [
+  "requests",
+  "beautifulsoup4",
+  "python-dotenv",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
