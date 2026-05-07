@@ -12,10 +12,17 @@ on:
         default: ''
         type: string
 
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   media-enrichment:
     name: Media Profile Enrichment
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:
       - name: Notify Supabase — start
@@ -80,7 +87,7 @@ jobs:
 
   social-enrichment:
     name: Social Profile Enrichment
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:
       - name: Notify Supabase — start
