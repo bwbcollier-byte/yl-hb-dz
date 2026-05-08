@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 
 /**
  * Deezer API client with multi-key rotation for RapidAPI.

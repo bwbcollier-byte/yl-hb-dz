@@ -4,8 +4,8 @@ import { fetchDeezerAlbum, getApiStats, sleep, SLEEP_MS } from './deezer-api';
 /**
  * Deezer Media Profile Enrichment
  * 
- * Fetches album/single data from the Deezer API and updates media_profiles records.
- * Uses the deezer_url column to extract the Deezer album ID.
+ * Fetches album/single data from the Deezer API and updates hb_media records.
+ * Uses the soc_deezer column to extract the Deezer album ID.
  * 
  * Processing order:
  *   1. Records where last_processed IS NULL (never processed) — first  [NOTE: using deezer_check]
@@ -75,12 +75,12 @@ async function enrichDeezerMediaProfiles() {
     await updateWorkflowLog('start', `Starting media enrichment run with limit=${LIMIT}`, { keys: apiStats.totalKeys });
 
     // ─── Fetch records: unprocessed first, then oldest processed ────────────
-    // Step 1: Get records with deezer_url but no deezer_check (never processed)
+    // Step 1: Get records with soc_deezer but no deezer_check (never processed)
     const { data: unprocessed, error: err1 } = await supabase
-        .from('media_profiles')
-        .select('id, album_name, artist_name, deezer_url, deezer_check')
-        .not('deezer_url', 'is', null)
-        .neq('deezer_url', '')
+        .from('hb_media')
+        .select('id, name, artist_name, soc_deezer, deezer_check')
+        .not('soc_deezer', 'is', null)
+        .neq('soc_deezer', '')
         .is('deezer_check', null)
         .order('created_at', { ascending: true })
         .limit(LIMIT);
@@ -97,10 +97,10 @@ async function enrichDeezerMediaProfiles() {
     // Step 2: If we still have room, get oldest-checked records
     if (remainingSlots > 0) {
         const { data: oldProcessed, error: err2 } = await supabase
-            .from('media_profiles')
-            .select('id, album_name, artist_name, deezer_url, deezer_check')
-            .not('deezer_url', 'is', null)
-            .neq('deezer_url', '')
+            .from('hb_media')
+            .select('id, name, artist_name, soc_deezer, deezer_check')
+            .not('soc_deezer', 'is', null)
+            .neq('soc_deezer', '')
             .not('deezer_check', 'is', null)
             .order('updated_at', { ascending: true })
             .limit(remainingSlots);
@@ -126,14 +126,14 @@ async function enrichDeezerMediaProfiles() {
         const profile = profiles[i];
         const progress = `[${i + 1}/${profiles.length}]`;
 
-        const albumId = extractAlbumId(profile.deezer_url);
+        const albumId = extractAlbumId(profile.soc_deezer);
         if (!albumId) {
-            console.log(`${progress} ⏭️  Skipping: ${profile.album_name} — cannot extract album ID from URL: ${profile.deezer_url}`);
+            console.log(`${progress} ⏭️  Skipping: ${profile.name} — cannot extract album ID from URL: ${profile.soc_deezer}`);
             skippedCount++;
             continue;
         }
 
-        console.log(`${progress} Processing: ${profile.artist_name} — ${profile.album_name} (album/${albumId})`);
+        console.log(`${progress} Processing: ${profile.artist_name} — ${profile.name} (album/${albumId})`);
 
         const albumData = await fetchDeezerAlbum(albumId);
 
@@ -147,7 +147,7 @@ async function enrichDeezerMediaProfiles() {
                 deezer_genre_id: albumData.genre_id,
                 deezer_check: 'done',
                 // Update shared fields if they are empty
-                ...(profile.album_name ? {} : { album_name: albumData.title }),
+                ...(profile.name ? {} : { name: albumData.title }),
                 cover_art_url: albumData.cover_xl || undefined,
                 track_count: albumData.nb_tracks?.toString(),
                 release_date: albumData.release_date || undefined,
@@ -161,7 +161,7 @@ async function enrichDeezerMediaProfiles() {
             });
 
             const { error: updateError } = await supabase
-                .from('media_profiles')
+                .from('hb_media')
                 .update(updatePayload)
                 .eq('id', profile.id);
 
@@ -176,7 +176,7 @@ async function enrichDeezerMediaProfiles() {
             // Mark as checked with error
             const now = new Date().toISOString();
             await supabase
-                .from('media_profiles')
+                .from('hb_media')
                 .update({
                     deezer_check: 'error',
                     updated_at: now
@@ -211,17 +211,17 @@ async function enrichDeezerMediaProfiles() {
 
         if (wf) {
             const { count: todoCount } = await supabase
-                .from('media_profiles')
+                .from('hb_media')
                 .select('*', { count: 'exact', head: true })
-                .not('deezer_url', 'is', null)
-                .neq('deezer_url', '')
+                .not('soc_deezer', 'is', null)
+                .neq('soc_deezer', '')
                 .is('deezer_check', null);
 
             const { count: doneCount } = await supabase
-                .from('media_profiles')
+                .from('hb_media')
                 .select('*', { count: 'exact', head: true })
-                .not('deezer_url', 'is', null)
-                .neq('deezer_url', '')
+                .not('soc_deezer', 'is', null)
+                .neq('soc_deezer', '')
                 .eq('deezer_check', 'done');
 
             await supabase

@@ -80,7 +80,7 @@ nohup ./overnight-deezer-social.sh > social-enrichment.log 2>&1 &
 Both workflows support `workflow_dispatch` with an optional `record_limit` input. Trigger from:
 
 - **GitHub UI**: Actions tab → Select workflow → Run workflow
-- **Hypebase Web App**: Workflows page → Click Start
+- **hype.works Web App**: Workflows page → Click Start
 
 ## 📊 Processing Order
 
