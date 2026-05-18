@@ -46,6 +46,33 @@ export function getApiStats() {
 const SLEEP_MS = parseInt(process.env.SLEEP_MS || '200');
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Exponential backoff with jitter for rate-limited / server-error responses.
+// Retries up to MAX_RETRIES times; delay = min(60000, 1000 * 2^attempt) + random(0, 500) ms.
+const MAX_RETRIES = 5;
+async function fetchWithBackoff(url: string, options: RequestInit): Promise<Response> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const response = await fetch(url, options);
+            if (response.status === 429 || response.status >= 500) {
+                const delay = Math.min(60000, 1000 * Math.pow(2, attempt)) + Math.random() * 500;
+                console.warn(`   ⏳ HTTP ${response.status} — retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+                await sleep(delay);
+                continue;
+            }
+            return response;
+        } catch (err) {
+            lastErr = err;
+            if (attempt < MAX_RETRIES) {
+                const delay = Math.min(60000, 1000 * Math.pow(2, attempt)) + Math.random() * 500;
+                console.warn(`   ⏳ Network error — retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+                await sleep(delay);
+            }
+        }
+    }
+    throw lastErr ?? new Error(`fetchWithBackoff: max retries exceeded for ${url}`);
+}
+
 interface DeezerArtistResponse {
     id: number;
     name: string;
@@ -112,7 +139,7 @@ export async function fetchDeezerArtist(artistId: string): Promise<DeezerArtistR
     totalApiCalls++;
 
     try {
-        const response = await fetch(`${BASE_URL}/artist/${artistId}`, {
+        const response = await fetchWithBackoff(`${BASE_URL}/artist/${artistId}`, {
             method: 'GET',
             headers: {
                 'x-rapidapi-host': RAPIDAPI_HOST,
@@ -151,7 +178,7 @@ export async function fetchDeezerAlbum(albumId: string): Promise<DeezerAlbumResp
     totalApiCalls++;
 
     try {
-        const response = await fetch(`${BASE_URL}/album/${albumId}`, {
+        const response = await fetchWithBackoff(`${BASE_URL}/album/${albumId}`, {
             method: 'GET',
             headers: {
                 'x-rapidapi-host': RAPIDAPI_HOST,
