@@ -1,9 +1,11 @@
 name: Deezer Unified Enrichment
 
 on:
-  schedule:
-    # Run 4 times a day (Every 6 hours) at 00:00, 06:00, 12:00, 18:00 UTC
-    - cron: '0 0,6,12,18 * * *'
+  # Schedule disabled 2026-05-20 — migrated to Supabase Edge Function (deezer-enrichment).
+  # Now runs via pg_cron job_id 248 (social, */5 min) + 249 (media, 2-59/5 min) using JSONB schema
+  # (enrichment_ids.deezer, audio_metrics.deezer_fans) + new check_deezer_enrichment column.
+  # Workflow YAML retained with workflow_dispatch as belt-and-braces fallback if Edge Function fails.
+  # See Work/Engineering Ops/deezer-edge-fn/ and decisions.md 2026-05-20.
   workflow_dispatch:
     inputs:
       record_limit:
